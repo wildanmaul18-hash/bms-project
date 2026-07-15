@@ -1,0 +1,10 @@
+# Ignore cache and backup folders
+__pycache__/
+*.pyc
+venv/
+Cache/
+Templete_Backup/
+templates/Cache/
+esp32_bms/Cache/
+.vscode/
+*.log
