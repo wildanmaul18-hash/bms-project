@@ -1,6 +1,9 @@
 [build]
 builder = "nixpacks"
 
+[build.env]
+PYTHON_VERSION = "3.11"
+
 [deploy]
 startCommand = "gunicorn -w 1 --threads 100 --timeout 120 --bind 0.0.0.0:$PORT app:app"
 restartPolicyType = "on_failure"
