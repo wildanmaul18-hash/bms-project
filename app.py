@@ -11,6 +11,9 @@ app = Flask(__name__)
 app.secret_key = 'bms-secret-key-ganti-ini'
 socketio = SocketIO(app, cors_allowed_origins='*')
 
+# Inisialisasi database saat aplikasi di-load (penting untuk Gunicorn/Railway)
+init_db()
+
 last_sensor_data = {
     'temperature': None, 'humidity': None, 'light': None,
     'timestamp': None, 'device_id': None, 'connected': False,
@@ -324,7 +327,6 @@ def check_alarm(data, now):
 # ── Main ──────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    init_db()
     import os
     port = int(os.environ.get('PORT', 5000))
     print(f'[BMS] Server starting on port {port}')
