@@ -2,7 +2,14 @@ import sqlite3
 import hashlib
 import os
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'database', 'bms.db')
+# BASE_DIR adalah folder tempat file database.py berada
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_DIR = os.path.join(BASE_DIR, "database")
+
+# Membuat folder database jika belum ada (penting untuk Railway/Cloud)
+os.makedirs(DB_DIR, exist_ok=True)
+
+DB_PATH = os.path.join(DB_DIR, "bms.db")
 
 
 def get_db():

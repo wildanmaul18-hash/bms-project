@@ -1,0 +1,2 @@
+# File ini untuk memastikan folder database/ ter-upload ke Git
+# Database file (bms.db) akan dibuat otomatis saat pertama kali run
