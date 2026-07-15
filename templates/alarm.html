@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMS - Alarm History</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    {% set active = "alarm" %}
+    {% include "sidebar.html" %}
+
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="top-bar-title">Alarm History</div>
+            <div class="top-bar-right">
+                <div class="top-bar-time"><i class="fas fa-calendar-alt"></i> <span id="clock"></span></div>
+            </div>
+        </div>
+
+        <div style="padding:20px;">
+
+            <!-- SUMMARY CARDS -->
+            <div class="dashboard-metrics" style="padding:0;margin-bottom:20px;">
+                <div class="metric-card">
+                    <i class="fas fa-bell metric-icon" style="color:#F44336;"></i>
+                    <div class="metric-details">
+                        <div class="metric-title">TOTAL ALARM</div>
+                        <div class="metric-value" id="total-alarm">0</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <i class="fas fa-arrow-up metric-icon" style="color:#F44336;"></i>
+                    <div class="metric-details">
+                        <div class="metric-title">HIGH ALARM</div>
+                        <div class="metric-value" id="total-high">0</div>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <i class="fas fa-arrow-down metric-icon" style="color:#FF9800;"></i>
+                    <div class="metric-details">
+                        <div class="metric-title">LOW ALARM</div>
+                        <div class="metric-value" id="total-low">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NOTIF ALARM REALTIME -->
+            <!-- TABEL -->
+            <div class="debug-section">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+                    <h3 style="margin:0;">Riwayat Alarm</h3>
+                    <button class="btn-action" onclick="loadAlarms()">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                </div>
+                <div style="overflow-y:auto;max-height:500px;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>Parameter</th>
+                                <th>Nilai</th>
+                                <th>Threshold</th>
+                                <th>Level</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alarm-tbody">
+                            <tr><td colspan="5" style="text-align:center;color:#aaa;">Memuat...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    setInterval(() => {
+        document.getElementById('clock').textContent = new Date().toLocaleString('id-ID');
+    }, 1000);
+
+    async function loadAlarms() {
+        const res    = await fetch('/api/alarms');
+        const alarms = await res.json();
+
+        document.getElementById('total-alarm').textContent = alarms.length;
+        document.getElementById('total-high').textContent  = alarms.filter(a => a.level === 'HIGH').length;
+        document.getElementById('total-low').textContent   = alarms.filter(a => a.level === 'LOW').length;
+
+        const tbody = document.getElementById('alarm-tbody');
+        if (!alarms.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#aaa;">Tidak ada alarm</td></tr>';
+            return;
+        }
+
+        const unit = { temperature: '°C', humidity: '%', light: ' Lux' };
+        tbody.innerHTML = alarms.map(a => `
+            <tr>
+                <td>${a.datetime}</td>
+                <td style="text-transform:capitalize;">${a.parameter}</td>
+                <td>${a.value}${unit[a.parameter] || ''}</td>
+                <td>${a.threshold}${unit[a.parameter] || ''}</td>
+                <td>
+                    <span class="alarm-label ${a.level === 'HIGH' ? 'high-alarm' : 'low-alarm'}">
+                        ${a.level === 'HIGH' ? '▲' : '▼'} ${a.level}
+                    </span>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    loadAlarms();
+    </script>
+</body>
+</html>

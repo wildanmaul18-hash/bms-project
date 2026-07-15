@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMS - User Management</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    {% set active = "users" %}
+    {% include "sidebar.html" %}
+
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="top-bar-title">User Management</div>
+        </div>
+
+        <div style="padding:20px;">
+
+            <!-- NOTIF -->
+            <div id="notif" style="display:none;margin-bottom:15px;padding:10px 15px;border-radius:5px;"></div>
+
+            <!-- TAMBAH USER -->
+            <div class="debug-section" style="margin-bottom:20px;max-width:500px;">
+                <h3><i class="fas fa-user-plus"></i> Tambah User Baru</h3>
+                <div class="input-group">
+                    <label>Username</label>
+                    <input type="text" id="new-username" class="input-control" style="width:100%;" placeholder="Username">
+                </div>
+                <div class="input-group">
+                    <label>Password</label>
+                    <input type="password" id="new-password" class="input-control" style="width:100%;" placeholder="Password">
+                </div>
+                <div class="input-group">
+                    <label>Role</label>
+                    <select id="new-role" class="input-control" style="width:100%;">
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <button class="btn-primary btn-action" onclick="addUser()">
+                    <i class="fas fa-plus"></i> Tambah User
+                </button>
+            </div>
+
+            <!-- DAFTAR USER -->
+            <div class="debug-section">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;">
+                    <h3 style="margin:0;"><i class="fas fa-users"></i> Daftar User</h3>
+                    <button class="btn-action" onclick="loadUsers()">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Role</th>
+                            <th>Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="user-tbody">
+                        <tr><td colspan="4" style="text-align:center;color:#aaa;">Memuat...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL GANTI PASSWORD -->
+    <div id="modal-pw" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+         background:rgba(0,0,0,0.5);z-index:999;justify-content:center;align-items:center;">
+        <div style="background:white;padding:30px;border-radius:8px;width:350px;">
+            <h3 style="margin-top:0;">Ganti Password</h3>
+            <p id="modal-username" style="color:#555;"></p>
+            <div class="input-group">
+                <label>Password Baru</label>
+                <input type="password" id="modal-pw-input" class="input-control" style="width:100%;">
+            </div>
+            <div style="display:flex;gap:10px;margin-top:15px;">
+                <button class="btn-primary btn-action" onclick="submitPassword()">Simpan</button>
+                <button class="btn-action" onclick="closeModal()">Batal</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    let selectedUid = null;
+
+    async function loadUsers() {
+        const res   = await fetch('/api/users');
+        const users = await res.json();
+        const tbody = document.getElementById('user-tbody');
+
+        if (!users.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#aaa;">Tidak ada user</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = users.map(u => `
+            <tr>
+                <td>${u.id}</td>
+                <td><i class="fas fa-user" style="color:#2196F3;margin-right:5px;"></i>${u.username}</td>
+                <td>
+                    <select class="input-control" onchange="changeRole(${u.id}, this.value)" style="padding:4px;">
+                        <option value="user"  ${u.role==='user'  ? 'selected':''}>User</option>
+                        <option value="admin" ${u.role==='admin' ? 'selected':''}>Admin</option>
+                    </select>
+                </td>
+                <td style="display:flex;gap:8px;">
+                    <button class="btn-action" onclick="openModal(${u.id}, '${u.username}')"
+                        title="Ganti Password">
+                        <i class="fas fa-key"></i>
+                    </button>
+                    <button class="btn-action" style="color:#F44336;border-color:#F44336;"
+                        onclick="deleteUser(${u.id}, '${u.username}')" title="Hapus User">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    async function addUser() {
+        const username = document.getElementById('new-username').value.trim();
+        const password = document.getElementById('new-password').value;
+        const role     = document.getElementById('new-role').value;
+
+        if (!username || !password) {
+            showNotif('Username dan password wajib diisi.', false);
+            return;
+        }
+
+        const res  = await fetch('/api/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, role })
+        });
+        const data = await res.json();
+        showNotif(data.msg, data.ok);
+
+        if (data.ok) {
+            document.getElementById('new-username').value = '';
+            document.getElementById('new-password').value = '';
+            loadUsers();
+        }
+    }
+
+    async function deleteUser(uid, username) {
+        if (!confirm(`Hapus user "${username}"?`)) return;
+        const res  = await fetch(`/api/users/${uid}`, { method: 'DELETE' });
+        const data = await res.json();
+        showNotif(data.ok ? `User "${username}" berhasil dihapus.` : data.msg, data.ok);
+        if (data.ok) loadUsers();
+    }
+
+    async function changeRole(uid, role) {
+        const res  = await fetch(`/api/users/${uid}/role`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role })
+        });
+        const data = await res.json();
+        showNotif(data.ok ? 'Role berhasil diubah.' : data.msg, data.ok);
+    }
+
+    function openModal(uid, username) {
+        selectedUid = uid;
+        document.getElementById('modal-username').textContent = `User: ${username}`;
+        document.getElementById('modal-pw-input').value = '';
+        document.getElementById('modal-pw').style.display = 'flex';
+    }
+
+    function closeModal() {
+        document.getElementById('modal-pw').style.display = 'none';
+        selectedUid = null;
+    }
+
+    async function submitPassword() {
+        const pw = document.getElementById('modal-pw-input').value;
+        if (!pw) { showNotif('Password tidak boleh kosong.', false); return; }
+
+        const res  = await fetch(`/api/users/${selectedUid}/password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pw })
+        });
+        const data = await res.json();
+        showNotif(data.msg, data.ok);
+        if (data.ok) closeModal();
+    }
+
+    function showNotif(msg, ok) {
+        const el = document.getElementById('notif');
+        el.textContent     = msg;
+        el.style.display   = 'block';
+        el.style.background = ok ? '#f0fff0' : '#fff0f0';
+        el.style.border     = `1px solid ${ok ? '#4CAF50' : '#F44336'}`;
+        el.style.color      = ok ? '#4CAF50' : '#F44336';
+        setTimeout(() => { el.style.display = 'none'; }, 3000);
+    }
+
+    loadUsers();
+    </script>
+</body>
+</html>

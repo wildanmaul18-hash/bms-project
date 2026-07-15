@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMS - Settings</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    {% set active = "settings" %}
+    {% include "sidebar.html" %}
+
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="top-bar-title">Settings</div>
+        </div>
+
+        <div style="padding:20px;max-width:600px;">
+
+            <!-- THRESHOLD -->
+            <div class="debug-section" style="margin-bottom:20px;">
+                <h3><i class="fas fa-sliders-h"></i> Threshold Sensor</h3>
+                <p style="color:#888;font-size:0.9em;">
+                    Alarm akan aktif jika nilai sensor di luar batas Min–Max.
+                </p>
+
+                <div id="save-msg" style="display:none;margin-bottom:15px;" class="alert-success">
+                    <i class="fas fa-check-circle"></i> Threshold berhasil disimpan!
+                </div>
+
+                <table class="statistics-table" style="margin-bottom:20px;">
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>Min</th>
+                            <th>Max</th>
+                            <th>Satuan</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span style="color:#2196F3;"><i class="fas fa-thermometer-half"></i> Temperature</span></td>
+                            <td><input type="number" id="temp-min" class="input-control" style="width:80px;" step="0.1"></td>
+                            <td><input type="number" id="temp-max" class="input-control" style="width:80px;" step="0.1"></td>
+                            <td>°C</td>
+                        </tr>
+                        <tr>
+                            <td><span style="color:#4CAF50;"><i class="fas fa-tint"></i> Humidity</span></td>
+                            <td><input type="number" id="humid-min" class="input-control" style="width:80px;" step="0.1"></td>
+                            <td><input type="number" id="humid-max" class="input-control" style="width:80px;" step="0.1"></td>
+                            <td>%</td>
+                        </tr>
+                        <tr>
+                            <td><span style="color:#FF9800;"><i class="fas fa-sun"></i> Light</span></td>
+                            <td><input type="number" id="light-min" class="input-control" style="width:80px;" step="1"></td>
+                            <td><input type="number" id="light-max" class="input-control" style="width:80px;" step="1"></td>
+                            <td>Lux</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <button class="btn-primary btn-action" onclick="saveThreshold()">
+                    <i class="fas fa-save"></i> Simpan Threshold
+                </button>
+            </div>
+
+            <!-- INFO AKUN -->
+            <div class="debug-section">
+                <h3><i class="fas fa-user"></i> Informasi Akun</h3>
+                <p>Username: <strong>{{ username }}</strong></p>
+                <p>Role: <strong>{{ role }}</strong></p>
+                <a href="/logout" class="btn-action" style="display:inline-block;text-decoration:none;color:#F44336;border-color:#F44336;">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // Load threshold saat ini
+    async function loadThreshold() {
+        const res  = await fetch('/api/threshold');
+        const data = await res.json();
+
+        document.getElementById('temp-min').value  = data.temperature?.min ?? 18;
+        document.getElementById('temp-max').value  = data.temperature?.max ?? 35;
+        document.getElementById('humid-min').value = data.humidity?.min    ?? 40;
+        document.getElementById('humid-max').value = data.humidity?.max    ?? 90;
+        document.getElementById('light-min').value = data.light?.min       ?? 100;
+        document.getElementById('light-max').value = data.light?.max       ?? 1000;
+    }
+
+    async function saveThreshold() {
+        const payload = {
+            temperature: {
+                min: parseFloat(document.getElementById('temp-min').value),
+                max: parseFloat(document.getElementById('temp-max').value)
+            },
+            humidity: {
+                min: parseFloat(document.getElementById('humid-min').value),
+                max: parseFloat(document.getElementById('humid-max').value)
+            },
+            light: {
+                min: parseFloat(document.getElementById('light-min').value),
+                max: parseFloat(document.getElementById('light-max').value)
+            }
+        };
+
+        const res = await fetch('/api/threshold', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            const msg = document.getElementById('save-msg');
+            msg.style.display = 'block';
+            setTimeout(() => { msg.style.display = 'none'; }, 3000);
+        }
+    }
+
+    loadThreshold();
+    </script>
+</body>
+</html>

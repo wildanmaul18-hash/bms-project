@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMS - Debug</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    {% set active = "debug" %}
+    {% include "sidebar.html" %}
+
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="top-bar-title">Communication Debug</div>
+            <div class="top-bar-right">
+                <div class="top-bar-time"><i class="fas fa-calendar-alt"></i> <span id="clock"></span></div>
+            </div>
+        </div>
+
+        <div class="debug-panel">
+            <!-- KIRI: info & kontrol -->
+            <div class="debug-left">
+                <div class="debug-section">
+                    <h3>Connection Info</h3>
+                    <p>Status: <span id="ws-status" style="color:#aaa;">Menghubungkan...</span></p>
+                    <p>Server: <span id="server-addr">localhost:5000</span></p>
+                    <p>Device: <span id="device-id">-</span></p>
+                    <p>Uptime: <span id="uptime">-</span></p>
+                    <p>Paket diterima: <span id="pkt-count">0</span></p>
+                </div>
+
+                <div class="debug-section debug-controls">
+                    <h3>Kirim Command ke ESP32</h3>
+                    <select id="cmd-select" class="input-control" style="width:100%;margin-bottom:8px;">
+                        <option value='{"type":"command","device":"led","action":"on"}'>LED ON</option>
+                        <option value='{"type":"command","device":"led","action":"off"}'>LED OFF</option>
+                        <option value='{"type":"command","device":"esp32","action":"ping"}'>Ping ESP32</option>
+                        <option value='{"type":"command","device":"esp32","action":"restart"}'>Restart ESP32</option>
+                    </select>
+                    <button class="btn-connect" onclick="sendCommand()">
+                        <i class="fas fa-paper-plane"></i> Kirim
+                    </button>
+                    <button class="btn-clear" onclick="clearLog()">
+                        <i class="fas fa-trash"></i> Clear Log
+                    </button>
+                </div>
+
+                <div class="debug-section">
+                    <h3>Raw Payload Terakhir</h3>
+                    <div class="debug-raw-payload-code" id="raw-payload">
+Menunggu data...
+                    </div>
+                </div>
+            </div>
+
+            <!-- KANAN: message log -->
+            <div class="debug-right debug-section">
+                <h3>Message Log</h3>
+                <div class="debug-message-log">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Waktu</th>
+                                <th>Arah</th>
+                                <th>Event</th>
+                                <th>Data</th>
+                            </tr>
+                        </thead>
+                        <tbody id="log-tbody">
+                            <tr><td colspan="4" style="text-align:center;color:#aaa;">Menunggu data...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    setInterval(() => {
+        document.getElementById('clock').textContent = new Date().toLocaleString('id-ID');
+    }, 1000);
+
+    const socket = io();
+    let pktCount = 0;
+    let logRows  = [];
+
+    socket.on('connect', () => {
+        document.getElementById('ws-status').textContent  = 'Connected';
+        document.getElementById('ws-status').style.color = '#4CAF50';
+        addLog('SYSTEM', '—', 'Browser terhubung ke server');
+    });
+
+    socket.on('disconnect', () => {
+        document.getElementById('ws-status').textContent  = 'Disconnected';
+        document.getElementById('ws-status').style.color = '#F44336';
+    });
+
+    socket.on('sensor_update', (data) => {
+        // Cek jika data valid (bukan undefined/null)
+        if (data.temperature === undefined || data.temperature === null) return;
+        pktCount++;
+        document.getElementById('pkt-count').textContent = pktCount;
+        document.getElementById('device-id').textContent = data.device_id || '-';
+
+        const payload = JSON.stringify({
+            device_id:   data.device_id,
+            temperature: data.temperature,
+            humidity:    data.humidity,
+            light:       data.light,
+            timestamp:   data.timestamp
+        }, null, 2);
+
+        document.getElementById('raw-payload').textContent = payload;
+        addLog('RECV', 'esp32_data',
+            `T=${data.temperature}°C  H=${data.humidity}%  L=${data.light}Lux`);
+    });
+
+    socket.on('heartbeat', (data) => {
+        const u = data.uptime || 0;
+        const h = String(Math.floor(u/3600)).padStart(2,'0');
+        const m = String(Math.floor((u%3600)/60)).padStart(2,'0');
+        const s = String(u%60).padStart(2,'0');
+        document.getElementById('uptime').textContent = `${h}:${m}:${s}`;
+        addLog('RECV', 'esp32_heartbeat', `uptime=${u}s`);
+    });
+
+    socket.on('alarm', (data) => {
+        addLog('ALARM', 'alarm', `${data.parameter}=${data.value} → ${data.level}`, true);
+    });
+
+    socket.on('esp32_response', (data) => {
+        addLog('RECV', 'esp32_response', JSON.stringify(data));
+    });
+
+    function addLog(dir, event, msg, isAlarm=false) {
+        const now = new Date().toLocaleTimeString('id-ID');
+        logRows.unshift({ time: now, dir, event, msg, isAlarm });
+        if (logRows.length > 100) logRows.pop();
+        renderLog();
+    }
+
+    function renderLog() {
+        const tbody = document.getElementById('log-tbody');
+        tbody.innerHTML = logRows.map(r => {
+            const color = r.isAlarm ? '#F44336'
+                        : r.dir === 'RECV' ? '#4CAF50'
+                        : r.dir === 'SENT' ? '#2196F3' : '#aaa';
+            return `<tr>
+                <td>${r.time}</td>
+                <td style="color:${color};font-weight:bold;">${r.dir}</td>
+                <td>${r.event}</td>
+                <td style="font-family:monospace;font-size:0.85em;">${r.msg}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    function sendCommand() {
+        const payload = JSON.parse(document.getElementById('cmd-select').value);
+        socket.emit('browser_command', payload);
+        addLog('SENT', 'browser_command', JSON.stringify(payload));
+    }
+
+    function clearLog() {
+        logRows = [];
+        document.getElementById('log-tbody').innerHTML =
+            '<tr><td colspan="4" style="text-align:center;color:#aaa;">Log dikosongkan</td></tr>';
+    }
+    </script>
+</body>
+</html>

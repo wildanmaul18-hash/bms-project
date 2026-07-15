@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+env/
+ENV/
+
+# Database (akan dibuat otomatis di cloud)
+database/bms.db
+
+# VS Code
+.vscode/
+
+# Backup folders (tidak perlu di cloud)
+Cache/
+Templete_Backup/
+templates/Cache/
+esp32_bms/Cache/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

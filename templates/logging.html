@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMS - Logging</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+</head>
+<body>
+    {% set active = "logging" %}
+    {% include "sidebar.html" %}
+
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="top-bar-title">Logging</div>
+            <div class="top-bar-right">
+                <div class="top-bar-time"><i class="fas fa-calendar-alt"></i> <span id="clock"></span></div>
+            </div>
+        </div>
+
+        <div class="logging-content">
+            <div class="logging-left">
+
+                <!-- FILTER -->
+                <div class="debug-section logging-filter">
+                    <div class="input-group">
+                        <label>Dari</label>
+                        <input type="datetime-local" id="from-dt" class="input-control">
+                    </div>
+                    <div class="input-group">
+                        <label>Sampai</label>
+                        <input type="datetime-local" id="to-dt" class="input-control">
+                    </div>
+                    <button class="btn-primary btn-action" onclick="loadData()">
+                        <i class="fas fa-sync-alt"></i> Tampilkan
+                    </button>
+                    <button class="btn-action" onclick="resetFilter()">
+                        <i class="fas fa-undo"></i> Reset
+                    </button>
+                </div>
+
+                <!-- CHART -->
+                <div class="chart-card">
+                    <div class="chart-card-header">
+                        <div>Grafik Historis</div>
+                        <div style="font-size:0.85em;color:#555;">
+                            <span style="color:#2196F3;">● Temp (°C)</span> &nbsp;
+                            <span style="color:#4CAF50;">● Humid (%)</span> &nbsp;
+                            <span style="color:#FF9800;">● Light (Lux/10)</span>
+                        </div>
+                    </div>
+                    <canvas id="historyChart" height="100"></canvas>
+                </div>
+
+                <!-- STATISTIK -->
+                <div class="debug-section">
+                    <h3>Statistik</h3>
+                    <table class="statistics-table">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th style="color:#2196F3;">Temperature</th>
+                                <th style="color:#4CAF50;">Humidity</th>
+                                <th style="color:#FF9800;">Light</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Min</td><td id="s-temp-min">-</td><td id="s-humid-min">-</td><td id="s-light-min">-</td></tr>
+                            <tr><td>Max</td><td id="s-temp-max">-</td><td id="s-humid-max">-</td><td id="s-light-max">-</td></tr>
+                            <tr><td>Avg</td><td id="s-temp-avg">-</td><td id="s-humid-avg">-</td><td id="s-light-avg">-</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TABEL DATA -->
+            <div class="logging-right debug-section">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                    <h3 style="margin:0;">Data Log</h3>
+                    <span id="total-records" style="color:#888;font-size:0.9em;">0 records</span>
+                </div>
+                <div style="overflow-y:auto;max-height:500px;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th style="color:#2196F3;">Temp (°C)</th>
+                                <th style="color:#4CAF50;">Humid (%)</th>
+                                <th style="color:#FF9800;">Light (Lux)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="log-tbody">
+                            <tr><td colspan="4" style="text-align:center;color:#aaa;">Klik Tampilkan untuk memuat data</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div style="margin-top:15px;display:flex;gap:10px;">
+                    <button class="btn-action" style="color:#4CAF50;border-color:#4CAF50;" onclick="exportCSV()">
+                        <i class="fas fa-file-csv"></i> Export CSV
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // Jam
+    setInterval(() => {
+        document.getElementById('clock').textContent = new Date().toLocaleString('id-ID');
+    }, 1000);
+
+    // Set default filter: 24 jam terakhir
+    const now = new Date();
+    const yesterday = new Date(now - 24 * 3600 * 1000);
+    document.getElementById('to-dt').value   = toLocal(now);
+    document.getElementById('from-dt').value = toLocal(yesterday);
+
+    function toLocal(d) {
+        return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    }
+
+    // Chart
+    const ctx = document.getElementById('historyChart').getContext('2d');
+    const chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                { label: 'Temperature', data: [], borderColor: '#2196F3', tension: 0.3, pointRadius: 2 },
+                { label: 'Humidity',    data: [], borderColor: '#4CAF50', tension: 0.3, pointRadius: 2 },
+                { label: 'Light/10',    data: [], borderColor: '#FF9800', tension: 0.3, pointRadius: 2 }
+            ]
+        },
+        options: {
+            responsive: true,
+            animation: false,
+            scales: { x: { ticks: { maxTicksLimit: 8 } } },
+            plugins: { legend: { display: false } }
+        }
+    });
+
+    let allLogs = [];
+
+    async function loadData() {
+        const from = document.getElementById('from-dt').value.replace('T', ' ') + ':00';
+        const to   = document.getElementById('to-dt').value.replace('T', ' ') + ':00';
+
+        const res  = await fetch(`/api/logs?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+        allLogs    = await res.json();
+
+        renderTable(allLogs);
+        renderChart(allLogs);
+        loadStats(from, to);
+    }
+
+    async function loadStats(from, to) {
+        const res  = await fetch(`/api/stats?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+        const stats = await res.json();
+
+        for (const p of ['temp', 'humid', 'light']) {
+            const key = p === 'temp' ? 'temperature' : p === 'humid' ? 'humidity' : 'light';
+            const unit = key === 'temperature' ? '°C' : key === 'humidity' ? '%' : ' Lux';
+            const s = stats[key];
+            document.getElementById(`s-${p}-min`).textContent = s ? s.min + unit : '-';
+            document.getElementById(`s-${p}-max`).textContent = s ? s.max + unit : '-';
+            document.getElementById(`s-${p}-avg`).textContent = s ? s.avg + unit : '-';
+        }
+    }
+
+    function renderTable(logs) {
+        document.getElementById('total-records').textContent = logs.length + ' records';
+        const tbody = document.getElementById('log-tbody');
+        if (!logs.length) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#aaa;">Tidak ada data</td></tr>';
+            return;
+        }
+        tbody.innerHTML = logs.map(r => `
+            <tr>
+                <td>${r.datetime}</td>
+                <td>${r.temperature ?? '-'}</td>
+                <td>${r.humidity ?? '-'}</td>
+                <td>${r.light ?? '-'}</td>
+            </tr>
+        `).join('');
+    }
+
+    function renderChart(logs) {
+        // Ambil max 100 titik agar chart tidak berat
+        const step  = Math.max(1, Math.floor(logs.length / 100));
+        const slice = logs.filter((_, i) => i % step === 0).reverse();
+
+        chart.data.labels           = slice.map(r => r.datetime.split(' ')[1]);
+        chart.data.datasets[0].data = slice.map(r => r.temperature);
+        chart.data.datasets[1].data = slice.map(r => r.humidity);
+        chart.data.datasets[2].data = slice.map(r => +(r.light / 10).toFixed(1));
+        chart.update();
+    }
+
+    function resetFilter() {
+        const now = new Date();
+        document.getElementById('to-dt').value   = toLocal(now);
+        document.getElementById('from-dt').value = toLocal(new Date(now - 24 * 3600 * 1000));
+        loadData();
+    }
+
+    function exportCSV() {
+        if (!allLogs.length) { alert('Tidak ada data untuk diexport.'); return; }
+        const header = 'Timestamp,Temperature,Humidity,Light\n';
+        const rows   = allLogs.map(r =>
+            `${r.datetime},${r.temperature},${r.humidity},${r.light}`
+        ).join('\n');
+        const blob = new Blob([header + rows], { type: 'text/csv' });
+        const a    = document.createElement('a');
+        a.href     = URL.createObjectURL(blob);
+        a.download = 'bms_log.csv';
+        a.click();
+    }
+
+    // Auto load saat halaman dibuka
+    loadData();
+    </script>
+</body>
+</html>

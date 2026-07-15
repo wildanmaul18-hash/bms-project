@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BMS - Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+</head>
+<body>
+    {% set active = "dashboard" %}
+    {% include "sidebar.html" %}
+
+    <!-- MAIN CONTENT -->
+    <div class="main-content">
+        <div class="top-bar">
+            <div class="top-bar-title">Dashboard</div>
+            <div class="top-bar-right">
+                <div class="top-bar-time">
+                    <i class="fas fa-calendar-alt"></i>
+                    <span id="clock">-</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ALARM NOTIF -->
+        <div id="alarm-notif" style="display:none;margin:15px 20px 0 20px;padding:12px 15px;border-radius:5px;border:1px solid;font-weight:bold;">
+            <span id="alarm-notif-text"></span>
+        </div>
+
+        <!-- METRIC CARDS -->
+        <div class="dashboard-metrics">
+            <!-- TEMPERATURE CARD WITH FAN -->
+            <div class="metric-card">
+                <i class="fas fa-thermometer-half metric-icon temperature-icon"></i>
+                <div class="metric-details">
+                    <div class="metric-title">TEMPERATURE</div>
+                    <div class="metric-value" id="val-temp">-- <span class="metric-unit">°C</span></div>
+                    <div class="metric-status" id="status-temp">
+                        <span class="status-indicator status-green"></span>Menunggu data...
+                    </div>
+                </div>
+                <div class="fan-control">
+                    <i class="fas fa-fan fan-icon" id="fan-icon"></i>
+                    <div class="fan-label" id="fan-label">OFF</div>
+                </div>
+            </div>
+            
+            <!-- HUMIDITY CARD -->
+            <div class="metric-card">
+                <i class="fas fa-tint metric-icon humidity-icon"></i>
+                <div class="metric-details">
+                    <div class="metric-title">HUMIDITY</div>
+                    <div class="metric-value" id="val-humid">-- <span class="metric-unit">%</span></div>
+                    <div class="metric-status" id="status-humid">
+                        <span class="status-indicator status-green"></span>Menunggu data...
+                    </div>
+                </div>
+            </div>
+            
+            <!-- LIGHT CARD WITH ROOM STATUS -->
+            <div class="metric-card">
+                <i class="fas fa-sun metric-icon light-icon"></i>
+                <div class="metric-details">
+                    <div class="metric-title">LIGHT</div>
+                    <div class="metric-value" id="val-light">-- <span class="metric-unit">Lux</span></div>
+                    <div class="metric-status" id="status-light">
+                        <span class="status-indicator status-green"></span>Menunggu data...
+                    </div>
+                </div>
+                <div class="room-status">
+                    <i class="fas fa-door-open room-icon" id="room-icon"></i>
+                    <div class="room-label" id="room-label">Waiting...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CHART -->
+        <div class="dashboard-charts">
+            <div class="chart-card">
+                <div class="chart-card-header">
+                    <div>Real-time Trend</div>
+                    <div style="font-size:0.9em;color:#555;">
+                        <span style="color:#2196F3;">● Temperature (°C)</span> &nbsp;
+                        <span style="color:#4CAF50;">● Humidity (%)</span> &nbsp;
+                        <span style="color:#FF9800;">● Light (Lux/10)</span>
+                    </div>
+                </div>
+                <canvas id="realtimeChart" height="100"></canvas>
+            </div>
+        </div>
+
+        <!-- INFO BAR -->
+        <div class="dashboard-details">
+            <div class="details-card">
+                <div style="color:#888;font-size:0.85em;">ESP32 STATUS</div>
+                <div>
+                    <span id="esp-dot" style="font-size:1.5em;color:#999;">●</span>
+                    <span id="esp-status" style="font-weight:bold;color:#999;">Waiting...</span>
+                </div>
+            </div>
+            <div class="details-card">
+                <div style="color:#888;font-size:0.85em;">UPTIME ESP32</div>
+                <div id="uptime">-</div>
+            </div>
+            <div class="details-card">
+                <div style="color:#888;font-size:0.85em;">DATA DITERIMA</div>
+                <div id="data-count">0 paket</div>
+            </div>
+            <div class="details-card">
+                <div style="color:#888;font-size:0.85em;">LAST UPDATE</div>
+                <div id="last-update">-</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ── Socket.IO ─────────────────────────────────────────────
+    const socket = io();
+    let dataCount = 0;
+    let uptimeSeconds = 0;
+
+    // Threshold default (akan diupdate dari server)
+    let THRESHOLD = {
+        temperature: { min: 18, max: 35 },
+        humidity:    { min: 40, max: 90 },
+        light:       { min: 100, max: 1000 }
+    };
+
+    // Update threshold dari server
+    socket.on('threshold_update', function(data) {
+        console.log('[THRESHOLD] Received from server:', data);
+        if (data.temperature) {
+            THRESHOLD.temperature = data.temperature;
+        }
+        if (data.humidity) {
+            THRESHOLD.humidity = data.humidity;
+        }
+        if (data.light) {
+            THRESHOLD.light = data.light;
+        }
+        console.log('[THRESHOLD] Updated:', THRESHOLD);
+    });
+
+    // ── Chart.js Setup ────────────────────────────────────────
+    const MAX_POINTS = 20;
+    const labels = [];
+    const tempData  = [];
+    const humidData = [];
+    const lightData = [];
+
+    const ctx = document.getElementById('realtimeChart').getContext('2d');
+    const chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Temperature (°C)',
+                    data: tempData,
+                    borderColor: '#2196F3',
+                    backgroundColor: 'rgba(33,150,243,0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 3,
+                },
+                {
+                    label: 'Humidity (%)',
+                    data: humidData,
+                    borderColor: '#4CAF50',
+                    backgroundColor: 'rgba(76,175,80,0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 3,
+                },
+                {
+                    label: 'Light (Lux/10)',
+                    data: lightData,
+                    borderColor: '#FF9800',
+                    backgroundColor: 'rgba(255,152,0,0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 3,
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            animation: { duration: 300 },
+            scales: {
+                y: { beginAtZero: false },
+                x: { ticks: { maxTicksLimit: 8 } }
+            },
+            plugins: { legend: { display: false } }
+        }
+    });
+
+    // ── Update Chart ──────────────────────────────────────────
+    function addChartData(time, temp, humid, light) {
+        labels.push(time);
+        tempData.push(temp);
+        humidData.push(humid);
+        lightData.push(+(light / 10).toFixed(1));  // skala Lux/10
+
+        if (labels.length > MAX_POINTS) {
+            labels.shift();
+            tempData.shift();
+            humidData.shift();
+            lightData.shift();
+        }
+        chart.update();
+    }
+
+    // ── Update Metric Cards ───────────────────────────────────
+    function updateCard(id, value, param) {
+        const el = document.getElementById('val-' + id);
+        const statusEl = document.getElementById('status-' + id);
+        const t = THRESHOLD[param];
+
+        el.innerHTML = value + ' <span class="metric-unit">' + getUnit(param) + '</span>';
+
+        let color, dot, label;
+        if (value > t.max) {
+            color = '#F44336'; dot = 'status-red'; label = '⚠ HIGH ALARM';
+        } else if (value < t.min) {
+            color = '#FF9800'; dot = 'status-orange'; label = '⚠ LOW ALARM';
+        } else {
+            color = '#4CAF50'; dot = 'status-green'; label = 'Normal';
+        }
+
+        // Update status indicator dan label
+        statusEl.innerHTML = '<span class="status-indicator ' + dot + '"></span>' + label;
+
+        // ── FAN CONTROL (Temperature) ──────────────────────────
+        if (param === 'temperature') {
+            // NOTE: Kontrol visual kipas di dashboard
+            // Kipas fisik (GPIO5) dikontrol oleh server
+        }
+
+        // ── ROOM STATUS (Light) ────────────────────────────────
+        if (param === 'light') {
+            const roomIcon = document.getElementById('room-icon');
+            const roomLabel = document.getElementById('room-label');
+            
+            if (value < t.min) {
+                // Cahaya RENDAH → Ruangan TIDAK DIGUNAKAN
+                roomIcon.className = 'fas fa-door-closed room-icon';
+                roomIcon.style.color = '#999';
+                roomLabel.textContent = 'Unused Room';
+                roomLabel.style.color = '#999';
+                roomLabel.style.fontWeight = 'normal';
+            } else {
+                // Cahaya CUKUP → Ruangan DIGUNAKAN
+                roomIcon.className = 'fas fa-door-open room-icon';
+                roomIcon.style.color = '#4CAF50';
+                roomLabel.textContent = 'Used Room';
+                roomLabel.style.color = '#4CAF50';
+                roomLabel.style.fontWeight = 'bold';
+            }
+        }
+    }
+
+    function getUnit(param) {
+        return { temperature: '°C', humidity: '%', light: 'Lux' }[param];
+    }
+
+    // ── Terima Data dari Server ───────────────────────────────
+    socket.on('sensor_update', function(data) {
+        // Cek jika data valid (bukan undefined/null)
+        if (data.temperature === undefined || data.temperature === null) return;
+
+        dataCount++;
+        document.getElementById('data-count').textContent = dataCount + ' paket';
+
+        // Update kartu
+        updateCard('temp',  data.temperature, 'temperature');
+        updateCard('humid', data.humidity,    'humidity');
+        updateCard('light', data.light,       'light');
+
+        // Update info
+        document.getElementById('last-update').textContent = data.timestamp || '-';
+
+        // Status ESP32
+        document.getElementById('esp-status').textContent  = 'Connected';
+        document.getElementById('esp-status').style.color  = '#4CAF50';
+        document.getElementById('esp-dot').style.color     = '#4CAF50';
+
+        // ── UPDATE KIPAS VISUAL DI DASHBOARD ──────────────────
+        // Status kipas berasal dari server (yang mengontrol GPIO5 di ESP32)
+        const fanStatus = data.fan_status || 'off';
+        const fanIcon = document.getElementById('fan-icon');
+        const fanLabel = document.getElementById('fan-label');
+        const roomIsUsed = data.room_is_used || false;
+        const temp = data.temperature;
+        const tempThreshold = THRESHOLD.temperature.max;
+        
+        if (fanStatus === 'on') {
+            // Kipas ON (berputar merah)
+            fanIcon.classList.add('fan-spinning');
+            fanIcon.style.color = '#F44336';
+            fanLabel.textContent = 'ON';
+            fanLabel.style.color = '#F44336';
+            fanLabel.style.fontWeight = 'bold';
+        } else {
+            // Kipas OFF
+            fanIcon.classList.remove('fan-spinning');
+            fanIcon.style.color = '#999';
+            
+            // Tampilkan label sesuai kondisi
+            if (!roomIsUsed && temp > tempThreshold) {
+                fanLabel.textContent = 'OFF (Unused Room)';
+            } else {
+                fanLabel.textContent = 'OFF';
+            }
+            fanLabel.style.color = '#999';
+            fanLabel.style.fontWeight = 'normal';
+        }
+
+        // Update chart — ambil jam:menit:detik dari timestamp
+        const time = data.timestamp ? data.timestamp.split(' ')[1] : '-';
+        addChartData(time, data.temperature, data.humidity, data.light);
+    });
+
+    socket.on('heartbeat', function(data) {
+        uptimeSeconds = data.uptime || 0;
+        const h = Math.floor(uptimeSeconds / 3600);
+        const m = Math.floor((uptimeSeconds % 3600) / 60);
+        const s = uptimeSeconds % 60;
+        document.getElementById('uptime').textContent =
+            String(h).padStart(2,'0') + ':' +
+            String(m).padStart(2,'0') + ':' +
+            String(s).padStart(2,'0');
+    });
+
+    socket.on('alarm', function(data) {
+        console.warn('[ALARM]', data);
+        const notif = document.getElementById('alarm-notif');
+        const text  = document.getElementById('alarm-notif-text');
+        const unit  = { temperature: '°C', humidity: '%', light: ' Lux' };
+        text.textContent = `⚠ ALARM! ${data.parameter.toUpperCase()} = ${data.value}${unit[data.parameter]||''} → ${data.level}`;
+        notif.style.background = data.level === 'HIGH' ? '#fff0f0' : '#fff8e1';
+        notif.style.borderColor = data.level === 'HIGH' ? '#F44336' : '#FF9800';
+        notif.style.color       = data.level === 'HIGH' ? '#F44336' : '#FF9800';
+        notif.style.display = 'block';
+        setTimeout(() => { notif.style.display = 'none'; }, 10000);
+    });
+
+    // ── Jam real-time ─────────────────────────────────────────
+    function updateClock() {
+        const now = new Date();
+        document.getElementById('clock').textContent =
+            now.toLocaleDateString('id-ID') + ' ' +
+            now.toLocaleTimeString('id-ID');
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+    </script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<div class="sidebar">
+    <div class="sidebar-header">
+        <div class="sidebar-logo"></div>
+        <div class="sidebar-title">BMS<div style="font-size:0.6em;color:#ccc;">Building Monitoring System</div></div>
+    </div>
+    <div class="sidebar-nav">
+        <ul>
+            <li><a href="/dashboard" {% if active=='dashboard' %}class="active"{% endif %}><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
+            <li><a href="/logging"   {% if active=='logging'   %}class="active"{% endif %}><i class="fas fa-history"></i> Logging</a></li>
+            {% if role == 'admin' %}
+            <li><a href="/alarm"    {% if active=='alarm'    %}class="active"{% endif %}><i class="fas fa-bell"></i> Alarm History</a></li>
+            <li><a href="/debug"    {% if active=='debug'    %}class="active"{% endif %}><i class="fas fa-bug"></i> Debug</a></li>
+            <li><a href="/settings" {% if active=='settings' %}class="active"{% endif %}><i class="fas fa-cog"></i> Settings</a></li>
+            <li><a href="/users"    {% if active=='users'    %}class="active"{% endif %}><i class="fas fa-users"></i> User Management</a></li>
+            {% endif %}
+            <li><a href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+        </ul>
+    </div>
+    <div class="sidebar-footer">
+        <div class="status-mqtt">
+            <i class="fas fa-circle" id="esp-dot" style="color:#aaa;"></i>
+            ESP32: <span id="esp-status" style="color:#aaa;">Menunggu...</span>
+        </div>
+        <div class="status-last-update">
+            Update: <span id="last-update">-</span>
+        </div>
+        <div class="status-device">
+            Device: <span id="device-id">-</span>
+        </div>
+        <div style="margin-top:8px;">Login: <strong>{{ username }}</strong></div>
+        <div style="font-size:0.8em;color:#aaa;">Role: {{ role }}</div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+(function() {
+    // Cek socket sudah ada (dashboard punya sendiri), kalau belum buat baru
+    var _socket = (typeof socket !== 'undefined') ? socket : io();
+
+    _socket.on('sensor_update', function(data) {
+        // Cek jika data valid (bukan undefined/null)
+        if (data.temperature === undefined || data.temperature === null) return;
+        document.getElementById('esp-status').textContent  = 'Connected';
+        document.getElementById('esp-status').style.color  = '#4CAF50';
+        document.getElementById('esp-dot').style.color     = '#4CAF50';
+        document.getElementById('last-update').textContent = data.timestamp || '-';
+        document.getElementById('device-id').textContent   = data.device_id || '-';
+    });
+
+    _socket.on('disconnect', function() {
+        document.getElementById('esp-status').textContent  = 'Disconnected';
+        document.getElementById('esp-status').style.color  = '#F44336';
+        document.getElementById('esp-dot').style.color     = '#F44336';
+    });
+})();
+</script>
