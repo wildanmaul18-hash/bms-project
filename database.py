@@ -4,12 +4,22 @@ import os
 
 # BASE_DIR adalah folder tempat file database.py berada
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_DIR = os.path.join(BASE_DIR, "database")
+
+# RAILWAY PERSISTENT STORAGE:
+# Jika ada folder /data (Railway Volume), pakai itu untuk database
+# Jika tidak ada (localhost), pakai folder database/ biasa
+if os.path.exists('/data'):
+    DB_DIR = '/data'
+    print('[DB] Using Railway persistent volume: /data')
+else:
+    DB_DIR = os.path.join(BASE_DIR, "database")
+    print('[DB] Using local directory: database/')
 
 # Membuat folder database jika belum ada (penting untuk Railway/Cloud)
 os.makedirs(DB_DIR, exist_ok=True)
 
 DB_PATH = os.path.join(DB_DIR, "bms.db")
+print(f'[DB] Database path: {DB_PATH}')
 
 
 def get_db():

@@ -147,12 +147,26 @@
         const from = document.getElementById('from-dt').value.replace('T', ' ') + ':00';
         const to   = document.getElementById('to-dt').value.replace('T', ' ') + ':00';
 
-        const res  = await fetch(`/api/logs?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
-        allLogs    = await res.json();
+        console.log('[FILTER] From:', from, 'To:', to);  // Debug
 
-        renderTable(allLogs);
-        renderChart(allLogs);
-        loadStats(from, to);
+        try {
+            const res  = await fetch(`/api/logs?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+            allLogs    = await res.json();
+            
+            console.log('[DATA] Loaded:', allLogs.length, 'records');  // Debug
+
+            renderTable(allLogs);
+            renderChart(allLogs);
+            loadStats(from, to);
+            
+            // Feedback visual
+            if (allLogs.length === 0) {
+                alert(`Tidak ada data antara:\n${from}\ndan\n${to}\n\nCoba ubah rentang waktu atau tunggu data sensor masuk.`);
+            }
+        } catch (err) {
+            console.error('[ERROR]', err);
+            alert('Error loading data: ' + err.message);
+        }
     }
 
     async function loadStats(from, to) {
