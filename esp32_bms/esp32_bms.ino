@@ -30,10 +30,11 @@
 #include <Adafruit_SH110X.h>
 
 // ── KONFIGURASI — GANTI SESUAI KONDISI KAMU ──────────────────
-const char* WIFI_SSID     = "Sumatra Kuphi 1";
-const char* WIFI_PASSWORD = "milosusu";
-const char* SERVER_IP     = "192.168.100.134";  // IP laptop/PC kamu
-const int   SERVER_PORT   = 5000;
+// === UNTUK CLOUD RAILWAY ===
+const char* WIFI_SSID     = "Polibatam TR L3";
+const char* WIFI_PASSWORD = "";
+const char* SERVER_HOST   = "bms-project-production.up.railway.app";  // Railway URL
+const int   SERVER_PORT   = 443;  // HTTPS port (bukan 5000)
 const char* DEVICE_ID     = "ESP32-01";
 // ─────────────────────────────────────────────────────────────
 
@@ -469,12 +470,12 @@ void setup() {
   display.println("server...");
   display.display();
 
-  // Setup WebSocket — pakai path /socket.io/ karena server pakai Flask-SocketIO
-  ws.begin(SERVER_IP, SERVER_PORT, "/socket.io/?EIO=4&transport=websocket");
+  // Setup WebSocket Secure (WSS) — untuk HTTPS Railway
+  ws.beginSSL(SERVER_HOST, SERVER_PORT, "/socket.io/?EIO=4&transport=websocket");
   ws.onEvent(onWebSocketEvent);
-  ws.setReconnectInterval(3000);  // reconnect tiap 3 detik kalau putus
+  ws.setReconnectInterval(5000);  // reconnect tiap 5 detik kalau putus
 
-  Serial.printf("[WS] Menghubungkan ke %s:%d\n", SERVER_IP, SERVER_PORT);
+  Serial.printf("[WS] Menghubungkan ke %s:%d (HTTPS/WSS)\n", SERVER_HOST, SERVER_PORT);
   Serial.printf("[CONFIG] Temperature threshold MAX: %.1f°C\n", TEMP_THRESHOLD_MAX);
 }
 

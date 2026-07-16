@@ -6,6 +6,7 @@ from database import (init_db, get_user_by_username, verify_password,
                       get_all_users, add_user, delete_user, change_password, change_role)
 import functools
 from datetime import datetime
+import pytz  # Untuk timezone Indonesia
 
 app = Flask(__name__)
 app.secret_key = 'bms-secret-key-ganti-ini'
@@ -13,6 +14,9 @@ socketio = SocketIO(app, cors_allowed_origins='*')
 
 # Inisialisasi database saat aplikasi di-load (penting untuk Gunicorn/Railway)
 init_db()
+
+# Timezone Indonesia (WIB = UTC+7)
+TIMEZONE_WIB = pytz.timezone('Asia/Jakarta')
 
 last_sensor_data = {
     'temperature': None, 'humidity': None, 'light': None,
@@ -237,7 +241,8 @@ def on_disconnect():
 @socketio.on('esp32_data')
 def on_esp32_data(data):
     print(f'[ESP32] Data masuk: {data}')
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    # Gunakan timezone WIB (Indonesia)
+    now = datetime.now(TIMEZONE_WIB).strftime('%Y-%m-%d %H:%M:%S')
     
     temperature = data.get('temperature')
     humidity = data.get('humidity')
