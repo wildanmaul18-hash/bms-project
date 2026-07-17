@@ -7,6 +7,8 @@ from database import (init_db, get_user_by_username, verify_password,
 import functools
 from datetime import datetime
 import pytz  # Untuk timezone Indonesia
+import requests  # Untuk Telegram API
+import os  # Untuk environment variables
 
 app = Flask(__name__)
 app.secret_key = 'bms-secret-key-ganti-ini'
@@ -17,6 +19,16 @@ init_db()
 
 # Timezone Indonesia (WIB = UTC+7)
 TIMEZONE_WIB = pytz.timezone('Asia/Jakarta')
+
+# Telegram Bot Configuration
+# Set via environment variable atau hardcode (untuk testing)
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')  # Isi token bot Anda
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')      # Isi chat ID Anda
+TELEGRAM_ENABLED = bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
+
+# Rate limiting untuk notifikasi (hindari spam)
+last_notification_time = {}
+NOTIFICATION_COOLDOWN = 300  # 5 menit (dalam detik)
 
 last_sensor_data = {
     'temperature': None, 'humidity': None, 'light': None,
@@ -312,6 +324,72 @@ def on_browser_command(data):
 
 # ── Alarm Engine ──────────────────────────────────────────────
 
+def send_telegram_notification(parameter, value, threshold, level, timestamp):
+    """Kirim notifikasi alarm ke Telegram"""
+    
+    if not TELEGRAM_ENABLED:
+        print('[TELEGRAM] Disabled - Bot token or Chat ID not configured')
+        return
+    
+    # Rate limiting - hanya kirim 1x per 5 menit untuk parameter yang sama
+    import time
+    key = f"{parameter}_{level}"
+    now = time.time()
+    
+    if key in last_notification_time:
+        if now - last_notification_time[key] < NOTIFICATION_COOLDOWN:
+            print(f'[TELEGRAM] Skipped (rate limit): {key}')
+            return
+    
+    last_notification_time[key] = now
+    
+    # Icon berdasarkan parameter
+    icons = {
+        'temperature': '🌡️',
+        'humidity': '💧',
+        'light': '💡'
+    }
+    
+    # Unit
+    units = {
+        'temperature': '°C',
+        'humidity': '%',
+        'light': ' Lux'
+    }
+    
+    # Format pesan
+    message = f"""⚠️ *ALARM BMS*
+━━━━━━━━━━━━━━━━━━━━━━
+
+{icons.get(parameter, '📊')} *{parameter.upper()}*: `{value}` {units.get(parameter, '')}
+📊 *Threshold*: `{threshold}` {units.get(parameter, '')}
+🚨 *Status*: *{level} ALARM*
+📍 *Device*: ESP32-01
+⏰ *Time*: {timestamp}
+
+[Lihat Dashboard](https://bms-project-production.up.railway.app/dashboard)
+"""
+    
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        data = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "Markdown",
+            "disable_web_page_preview": True
+        }
+        
+        response = requests.post(url, data=data, timeout=5)
+        
+        if response.status_code == 200:
+            print(f'[TELEGRAM] ✅ Notification sent: {parameter} {level}')
+        else:
+            print(f'[TELEGRAM] ❌ Failed: {response.status_code} - {response.text}')
+            
+    except Exception as e:
+        print(f'[TELEGRAM] ❌ Error: {e}')
+
+
 def check_alarm(data, now):
     thresholds = get_thresholds()
     for param in ['temperature', 'humidity', 'light']:
@@ -326,7 +404,17 @@ def check_alarm(data, now):
             threshold_val = t['max'] if level == 'HIGH' else t['min']
             save_alarm(now, param, value, threshold_val, level)
             print(f'[ALARM] {param} = {value} → {level}')
-            socketio.emit('alarm', {'parameter': param, 'value': value, 'level': level, 'timestamp': now})
+            
+            # Kirim alarm ke dashboard
+            socketio.emit('alarm', {
+                'parameter': param, 
+                'value': value, 
+                'level': level, 
+                'timestamp': now
+            })
+            
+            # 🔔 Kirim notifikasi Telegram
+            send_telegram_notification(param, value, threshold_val, level, now)
 
 
 # ── Main ──────────────────────────────────────────────────────
